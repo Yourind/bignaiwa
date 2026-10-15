@@ -13,8 +13,8 @@
    *  常量
    * ------------------------------------------------------- */
 
-  const W = 560;             // 逻辑宽度
-  const H = 940;             // 逻辑高度
+  const W = 450;             // 逻辑宽度
+  const H = 738;             // 逻辑高度
   const WALL = 10;           // 左右墙厚
   const DROP_Y = 60;         // 待投放水果的高度
   const DANGER_Y = 128;      // 警戒线（比原来高 14px；再往上抬最大的可投水果就会压到线上）
@@ -34,6 +34,10 @@
   const MAX_MERGE_GIVES_REVIVE = true;  // 两只神奶蛙一起炸掉时，额外送一枚复活币
   const FREEZE_MS = 130;     // 清场时的定格，让这一下有重量
   const REVIVE_STEP = 2000;  // 每累计多少分，发一枚复活币
+  const ONE_CLICK_STEP = 500;  // 每累计多少分，攒一次「一键合成」
+  const ONE_CLICK_TICK = 0.07; // 一键合成时每多少秒合掉一对（做成连爆的节奏感）
+  const DOUBLE_CHANCE  = 0.30; // 每次投放有多大概率「连掉两颗」
+  const DOUBLE_DELAY   = 0.16; // 连掉两颗时，第二颗晚多少秒出现
   const MERGE_PAD = 0.8;     // 合成判定的接触容差（px）
 
   /* —— Q 弹手感 —— */
@@ -112,6 +116,9 @@
   const giveUpBtn      = document.getElementById('giveUpBtn');
   const reviveBadge    = document.getElementById('reviveBadge');
   const reviveCountEl  = document.getElementById('reviveCount');
+  const mergeBtn       = document.getElementById('mergeBtn');
+  const mergeCountEl   = document.getElementById('mergeCount');
+  const mergeTextEl    = document.getElementById('mergeText');
 
   /* ---------------------------------------------------------
    *  工具
@@ -235,6 +242,11 @@
     flash: 0,
     revives: 0,        // 本局还剩几枚复活币（重开清零）
     reviveGiven: 0,    // 本局已经发放过几次（用来判断跨过新的 2000 分）
+    oneClicks: 0,      // 本局还剩几次「一键合成」（重开清零）
+    oneClickGiven: 0,  // 同上，发放记录（用来判断跨过新的 500 分）
+    autoMerge: false,  // 一键合成的级联正在跑
+    autoTimer: 0,      // 距离合掉下一对的倒计时
+    bonus: null,       // 「连掉两颗」的第二颗：{ tier, x, t }，t 数到 0 才真的进场
     freeze: 0          // 命中定格剩余秒数
   };
 
@@ -627,6 +639,104 @@
     Sound.merge(6);
   }
 
+  /* ---------------------------------------------------------
+   *  一键合成
+   *
+   *  每累计 ONE_CLICK_STEP 分攒一次机会；用掉之后从最小的一级开始，
+   *  成对合成、级联往上，直到棋盘上再没有同级的两个为止。
+   *  合成走的就是 processMerges —— 计分、粒子、音效、
+   *  「两只神奶蛙一起炸掉换 500 分 + 一枚复活币」全部按同一套规则来。
+   * ------------------------------------------------------- */
+
+  /* 找一对可合成的：优先最小的一级，级联看起来就是从底下往上连爆 */
+  function findMergePair() {
+    const bs = state.balls;
+    for (let t = 0; t <= MAX_TIER; t++) {
+      let first = null;
+      for (let i = 0; i < bs.length; i++) {
+        const b = bs[i];
+        if (b.dead || b.tier !== t) continue;
+        if (!first) { first = b; continue; }
+        return [first, b];
+      }
+    }
+    return null;
+  }
+
+  function mergePair(a, b) {
+    a.dead = true;
+    b.dead = true;
+    processMerges([[a, b]]);
+  }
+
+  /* 一次只合一对，靠 autoTimer 拉开节奏。
+     一口气全合完会糊成一团、也看不清发生了什么；
+     分开合既看得见连爆，物理也有时间把新挤出来的空间让开。 */
+  function stepAutoMerge(dt) {
+    if (!state.autoMerge) return;
+    state.autoTimer -= dt;
+    if (state.autoTimer > 0) return;
+
+    const pair = findMergePair();
+    if (!pair) {
+      state.autoMerge = false;
+      paintOneClicks(false);
+      Sound.merge(3);
+      return;
+    }
+    mergePair(pair[0], pair[1]);
+    state.autoTimer = ONE_CLICK_TICK;
+  }
+
+  function useOneClick() {
+    if (state.over || state.autoMerge || state.oneClicks <= 0) return;
+    /* 棋盘上根本没有同级的两个，就别白白吃掉一次机会 */
+    if (!findMergePair()) {
+      state.floats.push({ x: W / 2, y: 300, text: '没有可以合成的', life: 1.2 });
+      return;
+    }
+    state.oneClicks--;
+    state.autoMerge = true;
+    state.autoTimer = 0;                 // 立刻合第一对
+    state.flash = Math.max(state.flash, 0.55);
+    Sound.ensure();
+    haptic(24);
+    paintOneClicks(false);
+  }
+
+  /* 每累计 ONE_CLICK_STEP 分攒一次机会 */
+  function grantOneClicks() {
+    let got = 0;
+    while (state.oneClickGiven < Math.floor(state.score / ONE_CLICK_STEP)) {
+      state.oneClickGiven++;
+      state.oneClicks++;
+      got++;
+    }
+    if (!got) return;
+    paintOneClicks(true);
+    Sound.merge(4);
+    /* 连爆过程中不飘字 —— 一次合成能跨好几个 500 分，
+       每跨一次飘一行会把分数飘字全盖住；结束后胶囊上自己会更新 */
+    if (!state.autoMerge) {
+      state.floats.push({ x: W / 2, y: 262, text: '+1 一键合成', life: 1.4 });
+    }
+  }
+
+  /* 有次数（或正在合成）才显示；合成中置灰、文案换掉 */
+  function paintOneClicks(pop) {
+    if (!mergeBtn) return;
+    if (mergeCountEl) mergeCountEl.textContent = '×' + state.oneClicks;
+    const show = state.oneClicks > 0 || state.autoMerge;
+    mergeBtn.hidden = !show;
+    mergeBtn.disabled = state.autoMerge;
+    if (mergeTextEl) mergeTextEl.textContent = state.autoMerge ? '合成中…' : '一键合成';
+    if (pop && show) {
+      mergeBtn.classList.remove('pop');
+      void mergeBtn.offsetWidth;
+      mergeBtn.classList.add('pop');
+    }
+  }
+
   function addScore(n, x, y, text) {
     state.score += n;
     if (state.score > state.best) {
@@ -640,6 +750,7 @@
       state.floats.push({ x, y, text: text || ('+' + n), life: 1 });
     }
     grantRevives();
+    grantOneClicks();
   }
 
   function bump(el) {
@@ -662,22 +773,53 @@
     state.aimX = clamp(x, lo, hi);
   }
 
+  /* 把一颗水果从顶部落进场（正常投放和「连掉两颗」共用） */
+  function spawnDrop(x, tier) {
+    state.balls.push(makeBall(x, DROP_Y, tier, 0, 130));
+    Sound.drop();
+    if (state.balls.length > 90) state.balls = state.balls.filter(b => !b.dead);
+  }
+
+  /* 「连掉两颗」的第二颗：晚 DOUBLE_DELAY 才进场。
+     拖这一下是为了不让两颗在空中撞上 —— 同一点位同时生成会叠在一起被弹飞，
+     隔 0.16 秒的话第一颗已经掉开 30px 左右，看起来就是干脆的两次投放。 */
+  function stepBonusDrop(dt) {
+    if (!state.bonus) return;
+    state.bonus.t -= dt;
+    if (state.bonus.t > 0) return;
+    const b = state.bonus;
+    state.bonus = null;
+    spawnDrop(b.x, b.tier);
+  }
+
   function tryDrop() {
-    if (state.over || !state.ready) return;
+    if (state.over || !state.ready || state.autoMerge) return;
     const tier = state.pending;
     const [lo, hi] = aimLimit(tier);
     const x = clamp(state.aimX, lo, hi);
 
-    const ball = makeBall(x, DROP_Y, tier, 0, 130);
-    state.balls.push(ball);
+    spawnDrop(x, tier);
+
+    /* 有概率连掉两颗：第二颗直接用「下一个」——它和第一颗天然不是同一级
+       （AVOID_REPEAT 保证的），所以不用另外掷骰子挑等级。
+       关掉 AVOID_REPEAT 时两边可能撞上，那就现掷一个不一样的顶上。 */
+    let twin = -1;
+    if (Math.random() < DOUBLE_CHANCE) {
+      twin = state.next === tier ? pickSpawnTier(tier) : state.next;
+    }
+    if (twin >= 0) {
+      const [blo, bhi] = aimLimit(twin);   // 第二颗可能更大，得按它自己的半径重新贴边
+      state.bonus = { tier: twin, x: clamp(x, blo, bhi), t: DOUBLE_DELAY };
+      state.pending = pickSpawnTier(twin);
+    } else {
+      state.bonus = null;
+      state.pending = state.next;
+    }
+    state.next = pickSpawnTier(state.pending);   // 和当前这颗不一样
 
     state.ready = false;
     state.cooldown = DROP_MS / 1000;
-    state.pending = state.next;
-    state.next = pickSpawnTier(state.pending);   // 和当前这颗不一样
-    Sound.drop();
     drawNext();
-    if (state.balls.length > 90) state.balls = state.balls.filter(b => !b.dead);
   }
 
   /* ---------------------------------------------------------
@@ -732,6 +874,8 @@
 
   function gameOver() {
     state.over = true;
+    state.autoMerge = false;      // 结束了就别再让级联跑下去
+    state.bonus = null;           // 还没落下的第二颗也一并作废
     finalScoreEl.textContent = state.score;
     finalBestEl.textContent = state.best;
     Sound.over();
@@ -766,10 +910,13 @@
     state.danger = false;
     state.ready = true;
     state.cooldown = 0;
+    state.autoMerge = false;
+    state.autoTimer = 0;
     state.flash = 0.6;               // 闪一下，让玩家知道救回来了
     if (revivePromptEl) revivePromptEl.hidden = true;
     if (overlayEl) overlayEl.classList.remove('show');
     paintRevives(false);
+    paintOneClicks(false);
     Sound.ensure();
     return true;
   }
@@ -787,6 +934,11 @@
     state.aimX = W / 2;
     state.revives = 0;        // 复活币只在本局有效，重开清零
     state.reviveGiven = 0;
+    state.oneClicks = 0;      // 一键合成的机会同理
+    state.oneClickGiven = 0;
+    state.autoMerge = false;
+    state.autoTimer = 0;
+    state.bonus = null;
     state.freeze = 0;
     state.pending = pickSpawnTier();
     state.next = pickSpawnTier(state.pending);
@@ -794,6 +946,7 @@
     if (revivePromptEl) revivePromptEl.hidden = true;
     if (overPanelEl) overPanelEl.hidden = false;
     paintRevives(false);
+    paintOneClicks(false);
     scoreEl.textContent = '0';
     bestEl.textContent = state.best;
     drawNext();
@@ -1171,10 +1324,13 @@
       if (state.cooldown <= 0) state.ready = true;
     }
 
+    stepBonusDrop(dt);
+
     /* 物理：子步细分，保证小水果不被穿透 */
     const sub = dt / SUBSTEPS;
     for (let s = 0; s < SUBSTEPS; s++) stepPhysics(sub);
 
+    stepAutoMerge(dt);
     checkGameOver(dt);
     if (state.flash > 0) state.flash = Math.max(0, state.flash - dt * 2.2);
   }
@@ -1371,6 +1527,13 @@
     if (reviveBtn) reviveBtn.addEventListener('click', revive);
     if (giveUpBtn) giveUpBtn.addEventListener('click', settle);
 
+    /* 一键合成按钮就长在棋盘里，pointerdown 必须拦下来：
+       不拦的话事件会冒泡到 stage，顺手把球给投出去。 */
+    if (mergeBtn) {
+      mergeBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+      mergeBtn.addEventListener('click', useOneClick);
+    }
+
     drawChain();
     reset();
     loadBlur();             // 占位图是内联的，几乎立刻可用
@@ -1387,6 +1550,9 @@
   /* 调试句柄（控制台可用）：__DNW__.state / .reset() / .drop() / .FRUITS / .render() */
   window.__DNW__ = { state, reset, revive, settle, gameOver, tryDrop, stepPhysics, update, FRUITS,
                      render, resizeCanvas, shapeOf, makeBall, paintRevives, addScore,
-                     MAX_BONUS, REVIVE_STEP,
+                     useOneClick, findMergePair, stepAutoMerge, paintOneClicks,
+                     stepBonusDrop, spawnDrop,
+                     MAX_BONUS, REVIVE_STEP, ONE_CLICK_STEP, ONE_CLICK_TICK,
+                     DOUBLE_CHANCE, DOUBLE_DELAY,
                      blurReady: () => !!blurImg };
 })();

@@ -68,8 +68,8 @@ body {
 
 .stage {
   position: relative;
-  height: min(86vh, 940px);
-  aspect-ratio: 560 / 940;
+  height: min(86vh, 738px);
+  aspect-ratio: 450 / 738;
   flex: 0 0 auto;
   border-radius: 24px;
   background: #fff3df;
@@ -339,6 +339,54 @@ body {
   100% { transform: scale(1); }
 }
 
+/* 一键合成：浮在棋盘右下角的胶囊按钮，跟左上角的复活币一左一右。
+   它是个真要点的按钮，所以不能像复活币那样 pointer-events:none ——
+   防止点击穿到棋盘上顺手投一颗的拦截放在 game.js 里。 */
+.merge-chip {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  color: #43186b;
+  background: linear-gradient(135deg, #f6e2ff, #c79cf5);
+  box-shadow: 0 4px 14px rgba(116, 56, 188, .38), inset 0 1px 0 rgba(255, 255, 255, .85);
+  cursor: pointer;
+  touch-action: manipulation;   /* 棋盘整体是 touch-action:none，按钮得自己开一个 */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.merge-chip-ico { font-size: 14px; }
+
+.merge-chip-count { opacity: .78; }
+
+/* 合成中：置灰、微微下沉，明确「这会儿点不了」 */
+.merge-chip:disabled {
+  cursor: default;
+  opacity: .72;
+  transform: translateY(1px);
+}
+
+.merge-chip.pop { animation: mergePop .5s cubic-bezier(.2, .9, .3, 1.5); }
+
+@keyframes mergePop {
+  0%   { transform: scale(1); }
+  45%  { transform: scale(1.18); box-shadow: 0 7px 20px rgba(116, 56, 188, .5); }
+  100% { transform: scale(1); }
+}
+
 /* 合成表底下那行规则说明 */
 .chain-note {
   margin: 6px 0 0;
@@ -375,6 +423,7 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .revive-chip.pop { animation: none; }
+  .merge-chip.pop { animation: none; }
 }
 
 .stat-value.bump { animation: bump .32s ease; }
@@ -746,7 +795,7 @@ body {
   .stage {
     margin: auto 0;
     height: min(calc(var(--vh) - var(--topbar) - 28px - var(--safe-t) - var(--safe-b)),
-                calc(96vw * 940 / 560));
+                calc(96vw * 738 / 450));
     width: auto;
     max-height: none;
     border-radius: 20px;
@@ -758,7 +807,7 @@ body {
     align-items: stretch;
     gap: 8px;
     width: 100%;
-    max-width: calc(96vw * 940 / 560);
+    max-width: calc(96vw * 738 / 450);
     padding: 8px 10px;
     border-radius: 18px;
     backdrop-filter: blur(10px);

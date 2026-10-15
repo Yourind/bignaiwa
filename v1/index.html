@@ -30,6 +30,16 @@
       <span class="revive-chip-ico" aria-hidden="true">🪙</span><span id="reviveCount">×0</span>
     </div>
 
+    <!-- 一键合成：浮在棋盘右下角，攒够 500 分才出现。
+         左上角是复活币、右下角是它，一左一右互不打架。
+         它是要点的，所以不能像复活币那样 pointer-events:none；
+         game.js 会拦下它的 pointerdown，免得穿到棋盘上顺手投一颗。 -->
+    <button class="merge-chip" id="mergeBtn" type="button" hidden>
+      <span class="merge-chip-ico" aria-hidden="true">✨</span>
+      <span class="merge-chip-text" id="mergeText">一键合成</span>
+      <span class="merge-chip-count" id="mergeCount">×0</span>
+    </button>
+
     <div class="overlay" id="overlay">
       <div class="dialog">
 
@@ -118,7 +128,9 @@
     <p class="tips">
       鼠标：移动瞄准、点击投放；触屏：拖动瞄准、松手投放。<br>
       ← → 微调位置，空格投放，R 重开。<br>
-      每 <strong>2000 分</strong>攒一枚<strong>复活币</strong>，只在本局有效。
+      每次投放有 <strong>30%</strong> 概率<strong>连掉两颗</strong>（两颗必不同级）；<br>
+      每 <strong>500 分</strong>攒一次<strong>一键合成</strong>（棋盘右下角 ✨），
+      每 <strong>2000 分</strong>攒一枚<strong>复活币</strong>，都只在本局有效。
     </p>
 
   </aside>

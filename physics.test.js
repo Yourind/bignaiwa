@@ -31,7 +31,7 @@ function makeEl(id) {
     id, style: {}, textContent: '', width: 680, height: 160, _c: new Set(),
     classList: { add: c => el._c.add(c), remove: c => el._c.delete(c), contains: c => el._c.has(c) },
     getContext: () => el._ctx || (el._ctx = makeCtx(id)),
-    getBoundingClientRect: () => ({ left: 0, top: 0, width: 560, height: 940 }),
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 450, height: 738 }),
     addEventListener(t, fn) { if (!listeners.has(el)) listeners.set(el, {}); listeners.get(el)[t] = fn; },
     querySelector(sel) {
       if (!el._q) el._q = {};
@@ -74,7 +74,7 @@ vm.runInContext(fs.readFileSync(path.join(root, 'v1', 'assets', 'fruits', 'parts
                 sandbox, { filename: 'parts.js' });
 vm.runInContext(fs.readFileSync(path.join(root, 'v1', 'game.js'), 'utf8'), sandbox, { filename: 'game.js' });
 
-const H = 940, W = 560, WALL = 10, R = [17, 23, 31, 39, 48, 58, 69, 81, 94, 108, 124];
+const H = 738, W = 450, WALL = 10, R = [17, 23, 31, 39, 48, 58, 69, 81, 94, 108, 124];
 const S = sandbox.__DNW__.state;
 const U = sandbox.__DNW__;
 const step = sandbox.__DNW__.stepPhysics;
